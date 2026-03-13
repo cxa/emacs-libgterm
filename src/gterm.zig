@@ -64,37 +64,39 @@ fn initGlobalSymbols(env: *emacs.emacs_env) void {
 
 const GtermInstance = struct {
     terminal: Terminal,
+    stream: ghostty_vt.ReadonlyStream,
     rows: u16,
     cols: u16,
 
     pub fn init(cols: u16, rows: u16) !*GtermInstance {
         const self = try allocator.create(GtermInstance);
-        self.* = .{
-            .terminal = try .init(allocator, .{
-                .cols = cols,
-                .rows = rows,
-                // Enable linefeed mode: LF (\n) implies CR (\r).
-                // Emacs strips \r from PTY output, so the terminal
-                // only sees \n. Without this, the cursor stays at the
-                // current column on LF instead of returning to col 0.
-                .default_modes = .{ .linefeed = true },
-            }),
-            .rows = rows,
+        self.terminal = try .init(allocator, .{
             .cols = cols,
-        };
+            .rows = rows,
+            // Enable linefeed mode: LF (\n) implies CR (\r).
+            // Emacs strips \r from PTY output, so the terminal
+            // only sees \n. Without this, the cursor stays at the
+            // current column on LF instead of returning to col 0.
+            .default_modes = .{ .linefeed = true },
+        });
+        // Persistent stream preserves parser state across feed calls,
+        // so escape sequences split across PTY output chunks are
+        // handled correctly.
+        self.stream = self.terminal.vtStream();
+        self.rows = rows;
+        self.cols = cols;
         return self;
     }
 
     pub fn deinit(self: *GtermInstance) void {
+        self.stream.deinit();
         self.terminal.deinit(allocator);
         allocator.destroy(self);
     }
 
     /// Feed raw bytes through the terminal's VT parser.
     pub fn feed(self: *GtermInstance, bytes: []const u8) void {
-        var stream = self.terminal.vtStream();
-        defer stream.deinit();
-        stream.nextSlice(bytes);
+        self.stream.nextSlice(bytes);
     }
 
     /// Render the visible screen cell-by-cell into a buffer.
