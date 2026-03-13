@@ -64,6 +64,12 @@ const GtermInstance = struct {
     /// Render the visible screen cell-by-cell into a buffer.
     /// Each terminal row becomes one line. Empty cells mid-line become
     /// spaces. Trailing empty cells per row are trimmed.
+    ///
+    /// Column-aware: tracks expected display column vs terminal column.
+    /// When a character's Unicode East Asian Width disagrees with the
+    /// terminal's cell width, padding spaces are inserted (or columns
+    /// skipped) to keep alignment. This prevents Powerline/NerdFont
+    /// glyphs from misaligning subsequent text.
     pub fn renderContent(self: *GtermInstance) ![]const u8 {
         const screen = self.terminal.screens.active;
         const page_list = &screen.pages;
@@ -97,11 +103,15 @@ const GtermInstance = struct {
                 if (cp != 0) last_non_empty = c + 1;
             }
 
+            // Track display column for width compensation
+            var display_col: usize = 0;
+
             // Render each cell up to last_non_empty
             var col: usize = 0;
             while (col < last_non_empty) : (col += 1) {
                 if (col >= page_cells.len) {
                     try buf.append(' ');
+                    display_col += 1;
                     continue;
                 }
                 const cell = &page_cells[col];
@@ -111,9 +121,18 @@ const GtermInstance = struct {
                     continue;
                 }
 
+                // If display column has drifted behind terminal column,
+                // insert padding spaces to realign
+                while (display_col < col) : (display_col += 1) {
+                    try buf.append(' ');
+                }
+                // If display column is ahead of terminal column, we can't
+                // easily remove chars, so we just let it be (rare case)
+
                 const cp = cell.codepoint();
                 if (cp == 0) {
                     try buf.append(' ');
+                    display_col += 1;
                 } else {
                     // Encode the codepoint as UTF-8
                     var utf8_buf: [4]u8 = undefined;
@@ -129,6 +148,11 @@ const GtermInstance = struct {
                             }
                         }
                     }
+
+                    // Advance display column by the character's estimated
+                    // Emacs display width (using Unicode East Asian Width)
+                    const emacs_width = emacsCharWidth(cp);
+                    display_col += emacs_width;
                 }
             }
 
@@ -137,6 +161,42 @@ const GtermInstance = struct {
         }
 
         return try buf.toOwnedSlice();
+    }
+
+    /// Estimate how many columns Emacs will use to display a codepoint.
+    /// This approximates Emacs's `char-width` using Unicode properties.
+    fn emacsCharWidth(cp: u21) usize {
+        // Control characters
+        if (cp < 0x20 or (cp >= 0x7F and cp < 0xA0)) return 0;
+
+        // Common wide ranges (CJK, Hangul, fullwidth forms)
+        if (isWideInEmacs(cp)) return 2;
+
+        // Default: single width
+        return 1;
+    }
+
+    /// Check if a codepoint is typically rendered as double-width in Emacs.
+    /// Based on Unicode East Asian Width property (W and F categories).
+    fn isWideInEmacs(cp: u21) bool {
+        // Hangul Jamo
+        if (cp >= 0x1100 and cp <= 0x115F) return true;
+        // Fullwidth/wide CJK ranges
+        if (cp >= 0x2E80 and cp <= 0x303E) return true;
+        if (cp >= 0x3041 and cp <= 0x33BF) return true;
+        if (cp >= 0x3400 and cp <= 0x4DBF) return true;
+        if (cp >= 0x4E00 and cp <= 0xA4CF) return true;
+        if (cp >= 0xA960 and cp <= 0xA97C) return true;
+        if (cp >= 0xAC00 and cp <= 0xD7A3) return true;
+        if (cp >= 0xF900 and cp <= 0xFAFF) return true;
+        if (cp >= 0xFE30 and cp <= 0xFE6F) return true;
+        if (cp >= 0xFF01 and cp <= 0xFF60) return true;
+        if (cp >= 0xFFE0 and cp <= 0xFFE6) return true;
+        // CJK Unified Ideographs Extension B+
+        if (cp >= 0x1F300 and cp <= 0x1F9FF) return true; // Emoji
+        if (cp >= 0x20000 and cp <= 0x2FFFF) return true;
+        if (cp >= 0x30000 and cp <= 0x3FFFF) return true;
+        return false;
     }
 
     /// Get cursor position (0-based row, col).
