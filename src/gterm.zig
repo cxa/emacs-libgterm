@@ -391,18 +391,20 @@ fn gtermRender(
         }
 
         var current_style_id: u16 = default_style_id;
-        var display_col: usize = 0;
         run_buf.clearRetainingCapacity();
 
+        // Simple cell-by-cell rendering (like vterm): output each cell's
+        // character, space for empty cells, skip wide-char continuations.
+        // No column-tracking padding — trust Emacs char-width matches.
         var col: usize = 0;
         while (col < last_non_empty) : (col += 1) {
             if (col >= page_cells.len) {
                 run_buf.append(' ') catch {};
-                display_col += 1;
                 continue;
             }
             const cell = &page_cells[col];
 
+            // Skip spacer cells (wide char continuations)
             if (cell.wide == .spacer_tail or cell.wide == .spacer_head) {
                 continue;
             }
@@ -413,15 +415,9 @@ fn gtermRender(
                 current_style_id = cell.style_id;
             }
 
-            // Column alignment padding
-            while (display_col < col) : (display_col += 1) {
-                run_buf.append(' ') catch {};
-            }
-
             const cp = cell.codepoint();
             if (cp == 0) {
                 run_buf.append(' ') catch {};
-                display_col += 1;
             } else {
                 var utf8_buf: [4]u8 = undefined;
                 const len = std.unicode.utf8Encode(cp, &utf8_buf) catch 1;
@@ -435,8 +431,6 @@ fn gtermRender(
                         }
                     }
                 }
-
-                display_col += GtermInstance.emacsCharWidth(cp);
             }
         }
 
