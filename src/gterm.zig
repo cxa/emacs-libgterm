@@ -628,6 +628,22 @@ fn gtermFree(
     return emacs.nil(e);
 }
 
+/// (gterm-cursor-keys-mode TERM) -> t or nil
+/// Return t if terminal is in application cursor keys mode (DECCKM).
+fn gtermCursorKeysMode(
+    env_opt: ?*emacs.emacs_env,
+    _: emacs.ptrdiff_t,
+    args: [*c]emacs.emacs_value,
+    _: ?*anyopaque,
+) callconv(.c) emacs.emacs_value {
+    const env = env_opt.?;
+    const instance = getInstanceFromArg(env, args[0]) orelse return emacs.nil(env);
+    if (instance.terminal.modes.get(.cursor_keys)) {
+        return emacs.t_val(env);
+    }
+    return emacs.nil(env);
+}
+
 // ── Module entry point ──────────────────────────────────────────────────
 
 /// Called by Emacs when the module is loaded via (require 'gterm-module).
@@ -665,6 +681,10 @@ export fn emacs_module_init(runtime: ?*emacs.emacs_runtime) callconv(.c) c_int {
 
     emacs.defun(env, "gterm-render", 1, 1, &gtermRender,
         "Render terminal content with ANSI styling into the current buffer.\nTERM is a terminal handle from `gterm-new'.\nInserts styled text directly using face properties.",
+    );
+
+    emacs.defun(env, "gterm-cursor-keys-mode", 1, 1, &gtermCursorKeysMode,
+        "Return t if terminal TERM is in application cursor keys mode (DECCKM).",
     );
 
     emacs.provide(env, "gterm-module");

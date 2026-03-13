@@ -141,6 +141,23 @@ PROCESS is the shell process."
   (interactive)
   (gterm-send-string "\177"))
 
+(defun gterm-send-escape ()
+  "Send escape to the shell."
+  (interactive)
+  (gterm-send-string "\e"))
+
+;; ── Ctrl key handling ───────────────────────────────────────────────────
+
+(defun gterm-send-ctrl-key ()
+  "Send Ctrl+key for the last input event."
+  (interactive)
+  (let* ((key (event-basic-type last-input-event))
+         (code (when (and (integerp key) (>= key ?a) (<= key ?z))
+                 (- key ?a -1))))
+    (when code
+      (gterm-send-string (string code)))))
+
+;; Keep explicit versions for C-c sub-commands
 (defun gterm-send-ctrl-c ()
   "Send Ctrl-C to the shell."
   (interactive)
@@ -155,6 +172,60 @@ PROCESS is the shell process."
   "Send Ctrl-Z to the shell."
   (interactive)
   (gterm-send-string "\032"))
+
+;; ── Escape sequence helpers ─────────────────────────────────────────────
+
+(defun gterm--send-escape-seq (seq)
+  "Send escape sequence SEQ (without leading ESC) to the shell."
+  (gterm-send-string (concat "\e" seq)))
+
+(defun gterm--app-cursor-p ()
+  "Return non-nil if terminal is in application cursor keys mode."
+  (and gterm--term
+       (fboundp 'gterm-cursor-keys-mode)
+       (gterm-cursor-keys-mode gterm--term)))
+
+;; ── Arrow keys ──────────────────────────────────────────────────────────
+
+(defun gterm-send-up ()    (interactive) (gterm--send-escape-seq (if (gterm--app-cursor-p) "OA" "[A")))
+(defun gterm-send-down ()  (interactive) (gterm--send-escape-seq (if (gterm--app-cursor-p) "OB" "[B")))
+(defun gterm-send-right () (interactive) (gterm--send-escape-seq (if (gterm--app-cursor-p) "OC" "[C")))
+(defun gterm-send-left ()  (interactive) (gterm--send-escape-seq (if (gterm--app-cursor-p) "OD" "[D")))
+
+;; ── Navigation keys ─────────────────────────────────────────────────────
+
+(defun gterm-send-home ()      (interactive) (gterm--send-escape-seq (if (gterm--app-cursor-p) "OH" "[H")))
+(defun gterm-send-end ()       (interactive) (gterm--send-escape-seq (if (gterm--app-cursor-p) "OF" "[F")))
+(defun gterm-send-delete ()    (interactive) (gterm--send-escape-seq "[3~"))
+(defun gterm-send-insert ()    (interactive) (gterm--send-escape-seq "[2~"))
+(defun gterm-send-page-up ()   (interactive) (gterm--send-escape-seq "[5~"))
+(defun gterm-send-page-down () (interactive) (gterm--send-escape-seq "[6~"))
+
+;; ── Function keys ───────────────────────────────────────────────────────
+
+(defun gterm-send-f1 ()  (interactive) (gterm--send-escape-seq "OP"))
+(defun gterm-send-f2 ()  (interactive) (gterm--send-escape-seq "OQ"))
+(defun gterm-send-f3 ()  (interactive) (gterm--send-escape-seq "OR"))
+(defun gterm-send-f4 ()  (interactive) (gterm--send-escape-seq "OS"))
+(defun gterm-send-f5 ()  (interactive) (gterm--send-escape-seq "[15~"))
+(defun gterm-send-f6 ()  (interactive) (gterm--send-escape-seq "[17~"))
+(defun gterm-send-f7 ()  (interactive) (gterm--send-escape-seq "[18~"))
+(defun gterm-send-f8 ()  (interactive) (gterm--send-escape-seq "[19~"))
+(defun gterm-send-f9 ()  (interactive) (gterm--send-escape-seq "[20~"))
+(defun gterm-send-f10 () (interactive) (gterm--send-escape-seq "[21~"))
+(defun gterm-send-f11 () (interactive) (gterm--send-escape-seq "[23~"))
+(defun gterm-send-f12 () (interactive) (gterm--send-escape-seq "[24~"))
+
+;; ── Modified arrow keys ─────────────────────────────────────────────────
+
+(defun gterm-send-S-up ()    (interactive) (gterm--send-escape-seq "[1;2A"))
+(defun gterm-send-S-down ()  (interactive) (gterm--send-escape-seq "[1;2B"))
+(defun gterm-send-S-right () (interactive) (gterm--send-escape-seq "[1;2C"))
+(defun gterm-send-S-left ()  (interactive) (gterm--send-escape-seq "[1;2D"))
+(defun gterm-send-C-right () (interactive) (gterm--send-escape-seq "[1;5C"))
+(defun gterm-send-C-left ()  (interactive) (gterm--send-escape-seq "[1;5D"))
+(defun gterm-send-M-right () (interactive) (gterm--send-escape-seq "[1;3C"))
+(defun gterm-send-M-left ()  (interactive) (gterm--send-escape-seq "[1;3D"))
 
 ;; ── Window size tracking ────────────────────────────────────────────────
 
@@ -183,16 +254,56 @@ PROCESS is the shell process."
 
 (defvar gterm-mode-map
   (let ((map (make-sparse-keymap)))
-    ;; Most printable chars go directly to the shell
+    ;; Printable chars go directly to the shell
     (cl-loop for c from 32 to 126
              do (define-key map (char-to-string c) #'gterm-send-key))
-    ;; Special keys
+    ;; Basic keys
     (define-key map (kbd "RET") #'gterm-send-return)
     (define-key map (kbd "DEL") #'gterm-send-backspace)
     (define-key map (kbd "TAB") #'gterm-send-key)
+    (define-key map (kbd "ESC") #'gterm-send-escape)
+    ;; Ctrl keys via C-c prefix (Emacs convention for major mode)
     (define-key map (kbd "C-c C-c") #'gterm-send-ctrl-c)
     (define-key map (kbd "C-c C-d") #'gterm-send-ctrl-d)
     (define-key map (kbd "C-c C-z") #'gterm-send-ctrl-z)
+    ;; Direct Ctrl keys (except C-c which is prefix, C-g which is quit)
+    (cl-loop for c from ?a to ?z
+             unless (memq c '(?c ?g))
+             do (define-key map (vector (list 'control c)) #'gterm-send-ctrl-key))
+    ;; Arrow keys
+    (define-key map (kbd "<up>") #'gterm-send-up)
+    (define-key map (kbd "<down>") #'gterm-send-down)
+    (define-key map (kbd "<right>") #'gterm-send-right)
+    (define-key map (kbd "<left>") #'gterm-send-left)
+    ;; Navigation keys
+    (define-key map (kbd "<home>") #'gterm-send-home)
+    (define-key map (kbd "<end>") #'gterm-send-end)
+    (define-key map (kbd "<deletechar>") #'gterm-send-delete)
+    (define-key map (kbd "<insert>") #'gterm-send-insert)
+    (define-key map (kbd "<prior>") #'gterm-send-page-up)
+    (define-key map (kbd "<next>") #'gterm-send-page-down)
+    ;; Function keys
+    (define-key map (kbd "<f1>") #'gterm-send-f1)
+    (define-key map (kbd "<f2>") #'gterm-send-f2)
+    (define-key map (kbd "<f3>") #'gterm-send-f3)
+    (define-key map (kbd "<f4>") #'gterm-send-f4)
+    (define-key map (kbd "<f5>") #'gterm-send-f5)
+    (define-key map (kbd "<f6>") #'gterm-send-f6)
+    (define-key map (kbd "<f7>") #'gterm-send-f7)
+    (define-key map (kbd "<f8>") #'gterm-send-f8)
+    (define-key map (kbd "<f9>") #'gterm-send-f9)
+    (define-key map (kbd "<f10>") #'gterm-send-f10)
+    (define-key map (kbd "<f11>") #'gterm-send-f11)
+    (define-key map (kbd "<f12>") #'gterm-send-f12)
+    ;; Modified arrow keys
+    (define-key map (kbd "S-<up>") #'gterm-send-S-up)
+    (define-key map (kbd "S-<down>") #'gterm-send-S-down)
+    (define-key map (kbd "S-<right>") #'gterm-send-S-right)
+    (define-key map (kbd "S-<left>") #'gterm-send-S-left)
+    (define-key map (kbd "C-<right>") #'gterm-send-C-right)
+    (define-key map (kbd "C-<left>") #'gterm-send-C-left)
+    (define-key map (kbd "M-<right>") #'gterm-send-M-right)
+    (define-key map (kbd "M-<left>") #'gterm-send-M-left)
     map)
   "Keymap for `gterm-mode'.")
 
