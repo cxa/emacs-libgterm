@@ -79,16 +79,13 @@
 (defun gterm--refresh ()
   "Refresh the buffer with current terminal content."
   (when gterm--term
-    (let* ((inhibit-read-only t)
-           (pos (gterm-cursor-pos gterm--term))
-           (cursor-row (car pos))
-           (cursor-col (cdr pos)))
+    (let* ((inhibit-read-only t))
       (erase-buffer)
-      (gterm-render gterm--term)
-      ;; Position point at cursor location
-      (goto-char (point-min))
-      (forward-line cursor-row)
-      (move-to-column cursor-col))))
+      (let ((cursor-pos (gterm-render gterm--term)))
+        ;; gterm-render returns the buffer position of the cursor,
+        ;; calculated during rendering for exact placement.
+        (when (integerp cursor-pos)
+          (goto-char cursor-pos))))))
 
 ;; ── Process filter ──────────────────────────────────────────────────────
 

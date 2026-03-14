@@ -368,6 +368,11 @@ fn gtermRender(
     const rows = instance.rows;
     const default_style_id = 0;
 
+    // Get cursor position to track during rendering
+    const cursor_row: u16 = @intCast(screen.cursor.y);
+    const cursor_col: u16 = @intCast(screen.cursor.x);
+    var cursor_point: emacs.emacs_value = emacs.nil(env);
+
     // Reusable buffer for accumulating text runs
     var run_buf: std.array_list.Managed(u8) = .init(allocator);
     defer run_buf.deinit();
@@ -375,6 +380,11 @@ fn gtermRender(
 
     var row: u16 = 0;
     while (row < rows) : (row += 1) {
+        // Record cursor position at start of cursor row (col 0)
+        if (row == cursor_row and cursor_col == 0) {
+            cursor_point = emacs.point(env);
+        }
+
         const pin = page_list.pin(.{ .viewport = .{
             .x = 0,
             .y = row,
@@ -394,19 +404,17 @@ fn gtermRender(
 
         var current_style_id: u16 = default_style_id;
         run_buf.clearRetainingCapacity();
+        var cells_emitted: u16 = 0;
 
-        // Simple cell-by-cell rendering (like vterm): output each cell's
-        // character, space for empty cells, skip wide-char continuations.
-        // No column-tracking padding — trust Emacs char-width matches.
         var col: usize = 0;
         while (col < last_non_empty) : (col += 1) {
             if (col >= page_cells.len) {
                 run_buf.append(' ') catch {};
+                cells_emitted += 1;
                 continue;
             }
             const cell = &page_cells[col];
 
-            // Skip spacer cells (wide char continuations)
             if (cell.wide == .spacer_tail or cell.wide == .spacer_head) {
                 continue;
             }
@@ -415,6 +423,12 @@ fn gtermRender(
             if (cell.style_id != current_style_id) {
                 flushRun(env, &run_buf, current_style_id, page, palette);
                 current_style_id = cell.style_id;
+            }
+
+            // Capture cursor position when we reach the cursor column
+            if (row == cursor_row and col == cursor_col and cursor_col > 0) {
+                flushRun(env, &run_buf, current_style_id, page, palette);
+                cursor_point = emacs.point(env);
             }
 
             const cp = cell.codepoint();
@@ -434,6 +448,23 @@ fn gtermRender(
                     }
                 }
             }
+            cells_emitted += 1;
+        }
+
+        // If cursor is past the last non-empty cell on this row,
+        // flush and record position
+        if (row == cursor_row and cursor_col >= last_non_empty and env.is_not_nil.?(env, cursor_point) == false) {
+            flushRun(env, &run_buf, current_style_id, page, palette);
+            // Insert spaces up to cursor column
+            const spaces_needed = cursor_col - @as(u16, @intCast(last_non_empty));
+            if (spaces_needed > 0) {
+                var space_buf: [256]u8 = undefined;
+                const n = @min(spaces_needed, 256);
+                @memset(space_buf[0..n], ' ');
+                const space_str = env.make_string.?(env, &space_buf, @intCast(n));
+                emacs.insert(env, space_str);
+            }
+            cursor_point = emacs.point(env);
         }
 
         // Flush remaining run for this row
@@ -444,7 +475,8 @@ fn gtermRender(
         emacs.insert(env, nl);
     }
 
-    return emacs.nil(env);
+    // Return cursor buffer position (or nil if not found)
+    return cursor_point;
 }
 
 /// Flush a styled text run: insert the text and apply face properties.
