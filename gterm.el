@@ -261,14 +261,16 @@ PROCESS is the shell process."
     (define-key map (kbd "RET") #'gterm-send-return)
     (define-key map (kbd "DEL") #'gterm-send-backspace)
     (define-key map (kbd "TAB") #'gterm-send-key)
-    (define-key map (kbd "ESC") #'gterm-send-escape)
+    ;; Note: ESC is not bound directly as it conflicts with Meta prefix
     ;; Ctrl keys via C-c prefix (Emacs convention for major mode)
     (define-key map (kbd "C-c C-c") #'gterm-send-ctrl-c)
     (define-key map (kbd "C-c C-d") #'gterm-send-ctrl-d)
     (define-key map (kbd "C-c C-z") #'gterm-send-ctrl-z)
     ;; Direct Ctrl keys (except C-c which is prefix, C-g which is quit)
+    ;; Ctrl keys: skip C-c (prefix), C-g (quit), C-x (prefix),
+    ;; C-h (help), C-m (same as RET), C-i (same as TAB)
     (cl-loop for c from ?a to ?z
-             unless (memq c '(?c ?g))
+             unless (memq c '(?c ?g ?h ?i ?m ?x))
              do (define-key map (vector (list 'control c)) #'gterm-send-ctrl-key))
     ;; Arrow keys
     (define-key map (kbd "<up>") #'gterm-send-up)
