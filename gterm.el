@@ -85,7 +85,14 @@
         ;; gterm-render returns the buffer position of the cursor,
         ;; calculated during rendering for exact placement.
         (when (integerp cursor-pos)
-          (goto-char cursor-pos))))))
+          (goto-char cursor-pos)))
+      ;; Update cursor visibility and style from terminal state
+      (when (fboundp 'gterm-cursor-info)
+        (let* ((info (gterm-cursor-info gterm--term))
+               (visible (car info))
+               (style (cdr info)))
+          (setq-local cursor-type
+                      (if visible style nil)))))))
 
 ;; ── Process filter ──────────────────────────────────────────────────────
 

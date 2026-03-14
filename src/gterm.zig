@@ -676,6 +676,32 @@ fn gtermCursorKeysMode(
     return emacs.nil(env);
 }
 
+/// (gterm-cursor-info TERM) -> (VISIBLE . STYLE)
+/// VISIBLE is t or nil. STYLE is 'box, 'bar, 'underline, or 'hollow.
+fn gtermCursorInfo(
+    env_opt: ?*emacs.emacs_env,
+    _: emacs.ptrdiff_t,
+    args: [*c]emacs.emacs_value,
+    _: ?*anyopaque,
+) callconv(.c) emacs.emacs_value {
+    const env = env_opt.?;
+    const instance = getInstanceFromArg(env, args[0]) orelse return emacs.nil(env);
+
+    const visible = instance.terminal.modes.get(.cursor_visible);
+    const vis_val = if (visible) emacs.t_val(env) else emacs.nil(env);
+
+    const style_name: [*:0]const u8 = switch (instance.terminal.screens.active.cursor.cursor_style) {
+        .block => "box",
+        .bar => "bar",
+        .underline => "hbar",
+        .block_hollow => "hollow",
+    };
+    const style_val = env.intern.?(env, style_name);
+
+    var cons_args = [_]emacs.emacs_value{ vis_val, style_val };
+    return env.funcall.?(env, env.intern.?(env, "cons"), 2, &cons_args);
+}
+
 /// (gterm-scroll-viewport TERM DELTA) -> nil
 /// Scroll viewport. Negative = up (into history), positive = down.
 /// 0 = scroll to bottom (active area).
@@ -756,6 +782,10 @@ export fn emacs_module_init(runtime: ?*emacs.emacs_runtime) callconv(.c) c_int {
 
     emacs.defun(env, "gterm-cursor-keys-mode", 1, 1, &gtermCursorKeysMode,
         "Return t if terminal TERM is in application cursor keys mode (DECCKM).",
+    );
+
+    emacs.defun(env, "gterm-cursor-info", 1, 1, &gtermCursorInfo,
+        "Return cursor state as (VISIBLE . STYLE) for terminal TERM.\nVISIBLE is t or nil. STYLE is box, bar, hbar, or hollow.",
     );
 
     emacs.defun(env, "gterm-scroll-viewport", 2, 2, &gtermScrollViewport,
