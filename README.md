@@ -26,11 +26,8 @@ This project follows the same architecture as [emacs-libvterm](https://github.co
 (use-package gterm
   :load-path "/path/to/emacs-libgterm"
   :init
-  ;; Auto-compile without prompting (optional)
   (setq gterm-always-compile-module t))
 ```
-
-On first load, gterm will detect the missing module and compile it automatically (or prompt you). You need to have the Ghostty source vendored first (see Setup below).
 
 ### Manual
 
@@ -41,45 +38,31 @@ On first load, gterm will detect the missing module and compile it automatically
 
 Then `M-x gterm` to open a terminal.
 
-## Setup
+### What happens on first load
 
-### 1. Clone this repository
+1. gterm detects the missing compiled module
+2. Automatically clones [Ghostty](https://github.com/ghostty-org/ghostty) into `vendor/ghostty` (if not present)
+3. Applies a build patch for macOS compatibility (if needed)
+4. Compiles the Zig dynamic module via `zig build`
+5. Loads the module
+
+The only prerequisite is having **Zig** and **Git** installed. Set `gterm-always-compile-module` to `t` to skip the confirmation prompt, or leave it `nil` to be asked first.
+
+### Manual build (optional)
+
+If you prefer to build manually:
 
 ```bash
 git clone https://github.com/rwc9u/emacs-libgterm.git
 cd emacs-libgterm
+zig build
+zig build test  # run tests
 ```
 
-### 2. Clone Ghostty as a vendor dependency
+Ghostty will be cloned automatically by `zig build` if not present, or you can clone it yourself:
 
 ```bash
 git clone --depth 1 https://github.com/ghostty-org/ghostty.git vendor/ghostty
-```
-
-### 3. Patch Ghostty's build.zig (macOS without full Xcode only)
-
-Ghostty's `build.zig` eagerly initializes XCFramework builds, which requires full Xcode. If you only have CommandLineTools, apply this patch to guard those behind the `emit-xcframework` flag.
-
-In `vendor/ghostty/build.zig`:
-
-- Wrap `GhosttyLib.initShared/initStatic` (lines ~95-102) in `if (config.app_runtime == .none and !config.target.result.os.tag.isDarwin())`
-- Wrap the first `GhosttyXCFramework.init` block (lines ~150-180) in `if (config.emit_xcframework)`
-- Wrap the second `GhosttyXCFramework.init` in the `run:` block (line ~212) by adding `and config.emit_xcframework` to the existing Darwin check
-
-If you have full Xcode installed (`xcode-select -p` shows `/Applications/Xcode.app/...`), no patch is needed.
-
-### 4. Build (or let Emacs do it)
-
-```bash
-zig build
-```
-
-Or just load gterm in Emacs — it will offer to compile automatically if the module is missing.
-
-### 5. Run tests
-
-```bash
-zig build test
 ```
 
 ## Usage
