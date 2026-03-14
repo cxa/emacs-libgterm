@@ -702,6 +702,30 @@ fn gtermCursorInfo(
     return env.funcall.?(env, env.intern.?(env, "cons"), 2, &cons_args);
 }
 
+/// (gterm-mode-enabled TERM MODE-NUM) -> t or nil
+/// Query whether a specific terminal mode is enabled.
+fn gtermModeEnabled(
+    env_opt: ?*emacs.emacs_env,
+    _: emacs.ptrdiff_t,
+    args: [*c]emacs.emacs_value,
+    _: ?*anyopaque,
+) callconv(.c) emacs.emacs_value {
+    const env = env_opt.?;
+    const instance = getInstanceFromArg(env, args[0]) orelse return emacs.nil(env);
+    const mode_num = env.extract_integer.?(env, args[1]);
+    if (emacs.check_exit(env)) return emacs.nil(env);
+
+    // Try as DEC private mode first, then ANSI mode
+    const mode_val: u16 = @intCast(mode_num);
+    const mode = ghostty_vt.modes.modeFromInt(mode_val, false) orelse
+        ghostty_vt.modes.modeFromInt(mode_val, true) orelse
+        return emacs.nil(env);
+    if (instance.terminal.modes.get(mode)) {
+        return emacs.t_val(env);
+    }
+    return emacs.nil(env);
+}
+
 /// (gterm-scroll-viewport TERM DELTA) -> nil
 /// Scroll viewport. Negative = up (into history), positive = down.
 /// 0 = scroll to bottom (active area).
@@ -786,6 +810,10 @@ export fn emacs_module_init(runtime: ?*emacs.emacs_runtime) callconv(.c) c_int {
 
     emacs.defun(env, "gterm-cursor-info", 1, 1, &gtermCursorInfo,
         "Return cursor state as (VISIBLE . STYLE) for terminal TERM.\nVISIBLE is t or nil. STYLE is box, bar, hbar, or hollow.",
+    );
+
+    emacs.defun(env, "gterm-mode-enabled", 2, 2, &gtermModeEnabled,
+        "Return t if terminal mode MODE-NUM is enabled in TERM.\nMODE-NUM is the numeric mode value (e.g. 2004 for bracketed paste).",
     );
 
     emacs.defun(env, "gterm-scroll-viewport", 2, 2, &gtermScrollViewport,

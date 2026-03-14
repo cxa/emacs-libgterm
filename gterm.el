@@ -270,6 +270,51 @@ PROCESS is the shell process."
     (setq gterm--scrollback-p nil)
     (gterm--refresh)))
 
+;; ── Drag and drop ───────────────────────────────────────────────────────
+
+(defun gterm--bracketed-paste-p ()
+  "Return non-nil if the terminal has bracketed paste mode enabled."
+  (and gterm--term
+       (fboundp 'gterm-mode-enabled)
+       (gterm-mode-enabled gterm--term 2004)))
+
+(defun gterm--send-paste (text)
+  "Send TEXT as a paste, with bracketed paste wrapping if the terminal wants it."
+  (if (gterm--bracketed-paste-p)
+      (gterm-send-string (concat "\033[200~" text "\033[201~"))
+    (gterm-send-string text)))
+
+(defun gterm-handle-drop (event)
+  "Handle a drag-and-drop EVENT by sending the file path to the terminal."
+  (interactive "e")
+  (let* ((payload (car (last (car (cdr event)))))
+         ;; Extract file paths from the drop data
+         (paths (cond
+                 ((stringp payload) (list payload))
+                 ((and (listp payload) (stringp (car payload))) payload)
+                 (t nil))))
+    (when paths
+      (let ((text (mapconcat #'identity paths " ")))
+        (gterm--send-paste text)))))
+
+(defun gterm--setup-drag-drop ()
+  "Set up drag-and-drop handling for the gterm buffer."
+  (setq-local dnd-protocol-alist
+              '(("^file:" . gterm--dnd-handler)))
+  ;; Handle drag-drop event in the keymap
+  (local-set-key [drag-n-drop] #'gterm-handle-drop)
+  (local-set-key [C-drag-n-drop] #'gterm-handle-drop)
+  (local-set-key [M-drag-n-drop] #'gterm-handle-drop))
+
+(defun gterm--dnd-handler (uri _action)
+  "Handle a DND URI drop by sending the file path to the terminal."
+  (let ((file (if (string-prefix-p "file://" uri)
+                  (url-unhex-string (substring uri 7))
+                uri)))
+    (when (and gterm--term gterm--process (process-live-p gterm--process))
+      (gterm--send-paste file)))
+  'private)
+
 ;; ── Window size tracking ────────────────────────────────────────────────
 
 (defun gterm--calculate-size ()
@@ -368,6 +413,8 @@ PROCESS is the shell process."
   ;; Disable line numbers if enabled globally
   (when (bound-and-true-p display-line-numbers-mode)
     (display-line-numbers-mode -1))
+  ;; Enable drag-and-drop file handling
+  (gterm--setup-drag-drop)
   (add-hook 'window-size-change-functions
             (lambda (_frame)
               (when (derived-mode-p 'gterm-mode)
