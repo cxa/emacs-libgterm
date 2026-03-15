@@ -146,13 +146,9 @@ Uses incremental rendering after the first full render."
   (when gterm--term
     (let* ((inhibit-read-only t)
            (cursor-pos
-            (if (and gterm--rendered
-                     (fboundp 'gterm-render-dirty))
-                ;; Incremental: only update dirty rows
-                (gterm-render-dirty gterm--term)
-              ;; Full render: erase and redraw everything
+            ;; Always do full render for now (incremental disabled)
+            (progn
               (erase-buffer)
-              (setq gterm--rendered t)
               (gterm-render gterm--term))))
       (when (integerp cursor-pos)
         (goto-char cursor-pos))
@@ -170,18 +166,19 @@ Uses incremental rendering after the first full render."
   (gterm--refresh))
 
 (defun gterm--schedule-refresh ()
-  "Schedule a batched refresh.  Coalesces rapid output into one render."
+  "Schedule a batched refresh.  Uses idle timer so Emacs drains all
+pending PTY output before rendering, preventing backpressure."
   (unless gterm--needs-refresh
     (setq gterm--needs-refresh t)
     (let ((buf (current-buffer)))
       (setq gterm--refresh-timer
-            (run-at-time 0.008 nil
-                         (lambda ()
-                           (when (buffer-live-p buf)
-                             (with-current-buffer buf
-                               (setq gterm--needs-refresh nil
-                                     gterm--refresh-timer nil)
-                               (gterm--refresh)))))))))
+            (run-with-idle-timer 0.01 nil
+                                 (lambda ()
+                                   (when (buffer-live-p buf)
+                                     (with-current-buffer buf
+                                       (setq gterm--needs-refresh nil
+                                             gterm--refresh-timer nil)
+                                       (gterm--refresh)))))))))
 
 ;; ── Process filter ──────────────────────────────────────────────────────
 
