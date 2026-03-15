@@ -80,6 +80,7 @@ const GtermInstance = struct {
     stream: ghostty_vt.ReadonlyStream,
     rows: u16,
     cols: u16,
+    freed: bool = false,
 
     pub fn init(cols: u16, rows: u16) !*GtermInstance {
         const self = try allocator.create(GtermInstance);
@@ -102,6 +103,8 @@ const GtermInstance = struct {
     }
 
     pub fn deinit(self: *GtermInstance) void {
+        if (self.freed) return;
+        self.freed = true;
         self.stream.deinit();
         self.terminal.deinit(allocator);
         allocator.destroy(self);
