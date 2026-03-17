@@ -4,6 +4,13 @@ All notable changes to emacs-libgterm are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Fix use-after-free crash in GC finalizer when `gterm-free` was called explicitly.
+  The finalizer would dereference already-freed struct memory during `sweep_vectors`,
+  causing a SIGSEGV (EXC_BAD_ACCESS). The struct memory is now owned solely by the
+  GC finalizer; `deinit()` releases terminal/stream resources but leaves the struct
+  allocated for the finalizer to safely check the freed guard and then destroy.
+
 ### Features
 - Mouse wheel scrollback — scroll through terminal history with trackpad or mouse wheel
 - Configurable scroll speed via `gterm-mouse-scroll-lines` (default: 5 lines per event)

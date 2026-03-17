@@ -117,7 +117,14 @@ const GtermInstance = struct {
         self.freed = true;
         self.stream.deinit();
         self.terminal.deinit(allocator);
-        allocator.destroy(self);
+        // Note: we do NOT call allocator.destroy(self) here.
+        // The GtermInstance memory must remain valid until the GC
+        // finalizer has run, because the finalizer reads self.freed
+        // to guard against double-cleanup. If we free the struct
+        // here (e.g. via an explicit gterm-free call), the later
+        // GC finalizer would dereference freed memory (use-after-free),
+        // which can crash during sweep_vectors.
+        // Instead, the finalizer is the sole owner of the struct memory.
     }
 
     /// Feed raw bytes through the terminal's VT parser.
@@ -794,10 +801,14 @@ fn gtermNew(
 }
 
 /// Invoked by Emacs GC when the user-ptr is collected.
+/// This is the sole owner of the GtermInstance struct memory.
+/// deinit() releases the terminal/stream resources but leaves the
+/// struct itself alive so this finalizer can safely read the freed flag.
 fn gtermFinalizer(ptr: ?*anyopaque) callconv(.c) void {
     if (ptr) |p| {
         const instance: *GtermInstance = @ptrCast(@alignCast(p));
         instance.deinit();
+        allocator.destroy(instance);
     }
 }
 
