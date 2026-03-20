@@ -9,3 +9,4 @@ zig-cache/
 \#*\#
 .\#*
 vendor/
+notes.md
