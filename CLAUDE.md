@@ -27,7 +27,11 @@ After rebuilding the `.dylib`, Emacs must be restarted — dynamic modules canno
 
 ## Auto-Compilation
 
-gterm.el auto-detects if the module is missing and offers to compile via `zig build`. Set `gterm-always-compile-module` to `t` to skip the prompt. The compile function `gterm-module-compile` checks for zig and vendor/ghostty before building.
+gterm.el auto-detects if the module is missing and offers to compile via `zig build`. Set `gterm-always-compile-module` to `t` to skip the prompt. The compile function `gterm-module-compile` checks for zig and vendor/ghostty before building. It auto-detects the `emacs-module.h` include path via `data-directory` and passes `-Demacs-include=` to zig build.
+
+## Releasing / Version Bumps
+
+The `;; Version:` header in `gterm.el` must be bumped when pushing changes that users need to pick up. `package-vc` (Emacs 30+ `:vc` keyword) uses this header to decide whether to re-fetch — if the version hasn't changed, it won't update even when the code has. Bump the version in `gterm.el` (and `build.zig.zon` if appropriate) whenever merging user-facing changes to main.
 
 ## Project Structure
 
